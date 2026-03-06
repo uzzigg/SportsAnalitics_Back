@@ -46,8 +46,8 @@ export const getPlayersList = async (req: Request, res: Response, next: NextFunc
         const apiRes = await getPlayers(pageNum, searchStr);
 
         let mappedPlayers: any[] = [];
-        if (Array.isArray(apiRes)) {
-            mappedPlayers = apiRes.map(mapPlayer);
+        if (apiRes.response) {
+            mappedPlayers = apiRes.response.map(mapPlayer);
         }
 
         // Apply local filtering for position as the API doesn't always support granular position filtering natively
@@ -67,7 +67,12 @@ export const getPlayersList = async (req: Request, res: Response, next: NextFunc
 
         res.json({
             status: 'success',
-            data: finalPlayers,
+            data: {
+                players: finalPlayers,
+                total: apiRes.paging ? apiRes.paging.total * 20 : finalPlayers.length,
+                page: apiRes.paging ? apiRes.paging.current : pageNum,
+                totalPages: apiRes.paging ? apiRes.paging.total : 1
+            },
             message: 'Datos obtenidos correctamente de la API'
         });
     } catch (error: any) {
@@ -81,11 +86,11 @@ export const getPlayerDetails = async (req: Request, res: Response, next: NextFu
         if (!id || !isValidId(id)) throw { status: 400, message: 'ID de jugador inválido' };
 
         const apiRes = await getPlayer(id);
-        if (!Array.isArray(apiRes) || apiRes.length === 0) {
+        if (!apiRes.response || apiRes.response.length === 0) {
             throw { status: 404, message: 'Jugador no encontrado' };
         }
 
-        const p = mapPlayer(apiRes[0]);
+        const p = mapPlayer(apiRes.response[0]);
 
         res.json({
             status: 'success',
@@ -112,11 +117,11 @@ export const getPlayerStats = async (req: Request, res: Response, next: NextFunc
         if (!id || !isValidId(id)) throw { status: 400, message: 'ID de jugador inválido' };
 
         const apiRes = await getPlayer(id);
-        if (!Array.isArray(apiRes) || apiRes.length === 0) {
+        if (!apiRes.response || apiRes.response.length === 0) {
             throw { status: 404, message: 'Jugador no encontrado' };
         }
 
-        const p = mapPlayer(apiRes[0]);
+        const p = mapPlayer(apiRes.response[0]);
         const stats = p.rawStats || {};
 
         const data = {

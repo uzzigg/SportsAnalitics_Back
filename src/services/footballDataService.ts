@@ -34,11 +34,20 @@ export const getPlayers = async (page: number = 1, search: string = '') => {
     console.log(`[API Request] ${url}`);
     const response = await apiClient.get(url);
 
-    // Only cache successful responses (avoid caching rate-limit errors)
-    if (response.data && !response.data.errors?.rateLimit && Array.isArray(response.data.response) && response.data.response.length > 0) {
-        cache[url] = { timestamp: Date.now(), data: response.data.response };
+    if (response.data && response.data.errors) {
+        const errors = response.data.errors;
+        if (Array.isArray(errors) && errors.length > 0) {
+            throw new Error(`API Error: ${errors[0]}`);
+        } else if (typeof errors === 'object' && Object.keys(errors).length > 0) {
+            const errorMsg = Object.values(errors).join(', ');
+            throw new Error(`API Error: ${errorMsg}`);
+        }
     }
-    return response.data?.response || [];
+
+    if (response.data && Array.isArray(response.data.response) && response.data.response.length > 0) {
+        cache[url] = { timestamp: Date.now(), data: response.data };
+    }
+    return response.data;
 };
 
 export const getPlayer = async (playerId: number | string, season: number = 2023) => {
@@ -53,8 +62,18 @@ export const getPlayer = async (playerId: number | string, season: number = 2023
     console.log(`[API Request] ${url}`);
     const response = await apiClient.get(url);
 
-    if (response.data && !response.data.errors?.rateLimit && Array.isArray(response.data.response) && response.data.response.length > 0) {
-        cache[url] = { timestamp: Date.now(), data: response.data.response };
+    if (response.data && response.data.errors) {
+        const errors = response.data.errors;
+        if (Array.isArray(errors) && errors.length > 0) {
+            throw new Error(`API Error: ${errors[0]}`);
+        } else if (typeof errors === 'object' && Object.keys(errors).length > 0) {
+            const errorMsg = Object.values(errors).join(', ');
+            throw new Error(`API Error: ${errorMsg}`);
+        }
     }
-    return response.data?.response || [];
+
+    if (response.data && Array.isArray(response.data.response) && response.data.response.length > 0) {
+        cache[url] = { timestamp: Date.now(), data: response.data };
+    }
+    return response.data;
 };
