@@ -36,9 +36,9 @@ export const getPlayers = async (page: number = 1, search: string = '') => {
 
     // Only cache successful responses (avoid caching rate-limit errors)
     if (response.data && !response.data.errors?.rateLimit && Array.isArray(response.data.response) && response.data.response.length > 0) {
-        cache[url] = { timestamp: Date.now(), data: response.data };
+        cache[url] = { timestamp: Date.now(), data: response.data.response };
     }
-    return response.data;
+    return response.data?.response || [];
 };
 
 export const getPlayer = async (playerId: number | string, season: number = 2023) => {
@@ -54,7 +54,7 @@ export const getPlayer = async (playerId: number | string, season: number = 2023
     const response = await apiClient.get(url);
 
     if (response.data && !response.data.errors?.rateLimit && Array.isArray(response.data.response) && response.data.response.length > 0) {
-        cache[url] = { timestamp: Date.now(), data: response.data };
+        cache[url] = { timestamp: Date.now(), data: response.data.response };
     }
-    return response.data;
+    return response.data?.response || [];
 };
