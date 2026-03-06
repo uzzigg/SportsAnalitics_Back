@@ -12,8 +12,14 @@ const apiClient = axios.create({
     },
 });
 
-export const getPlayers = async (page: number = 1, league: number = 39, season: number = 2023) => {
-    const response = await apiClient.get(`/players?league=${league}&season=${season}&page=${page}`);
+export const getPlayers = async (page: number = 1, search: string = '') => {
+    let url = `/players?page=${page}`;
+    if (search && search.length >= 3) {
+        url += `&search=${search}`;
+    } else {
+        url += `&league=39&season=2023`;
+    }
+    const response = await apiClient.get(url);
     return response.data;
 };
 

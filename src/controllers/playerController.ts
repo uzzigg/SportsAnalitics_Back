@@ -1,89 +1,61 @@
 import { Request, Response, NextFunction } from 'express';
 import { getPlayers, getPlayer } from '../services/footballDataService';
 import { isValidId } from '../utils/validators';
-import fs from 'fs';
-import path from 'path';
 
-// Persistent cache path
-const CACHE_FILE = path.join(__dirname, '../../players_cache.json');
+const positionMap: Record<string, string> = {
+    'Goalkeeper': 'Portero',
+    'Defender': 'Defensa',
+    'Midfielder': 'Mediocentro',
+    'Attacker': 'Delantero'
+};
 
-const loadPlayersCache = async () => {
-    // Check if persistent cache exists on disk to prevent hitting the 100/day limit
-    if (fs.existsSync(CACHE_FILE)) {
-        try {
-            const data = fs.readFileSync(CACHE_FILE, 'utf-8');
-            return JSON.parse(data);
-        } catch (e) {
-            console.error('Failed to read cache file, fetching fresh...', e);
-        }
-    }
+const mapPlayer = (item: any) => {
+    const p = item.player;
+    const stats = item.statistics && item.statistics[0] ? item.statistics[0] : {};
+    const teamInfo = stats.team || {};
+    const gamesInfo = stats.games || {};
+    const positionStr = gamesInfo.position || 'Unknown';
 
-    try {
-        console.log('Fetching fresh players from API-Football to build cache (Consuming quota...)');
-        // Fetch 2 pages of Premier League 2023 players (40 players total to save quota)
-        const pagesToFetch = [1, 2];
-        const pageResults = await Promise.all(pagesToFetch.map(page => getPlayers(page, 39, 2023)));
-
-        const positionMap: Record<string, string> = {
-            'Goalkeeper': 'Portero',
-            'Defender': 'Defensa',
-            'Midfielder': 'Mediocentro',
-            'Attacker': 'Delantero'
-        };
-
-        let allPlayers: any[] = [];
-        pageResults.forEach(res => {
-            if (res.response) {
-                const mapped = res.response.map((item: any) => {
-                    const p = item.player;
-                    const stats = item.statistics && item.statistics[0] ? item.statistics[0] : {};
-                    const teamInfo = stats.team || {};
-                    const gamesInfo = stats.games || {};
-                    const positionStr = gamesInfo.position || 'Unknown';
-
-                    return {
-                        id: p.id,
-                        name: p.name,
-                        position: positionMap[positionStr] || positionStr || 'Jugador',
-                        nationality: p.nationality || '',
-                        shirtNumber: gamesInfo.number || Math.floor(Math.random() * 99) + 1,
-                        photoUrl: p.photo, // Native API-Football Photos!
-                        dateOfBirth: p.birth?.date,
-                        team: {
-                            id: teamInfo.id,
-                            name: teamInfo.name || 'Agente Libre',
-                            crest: teamInfo.logo
-                        },
-                        // Keep raw stats for details page
-                        rawStats: stats
-                    };
-                });
-                allPlayers = allPlayers.concat(mapped);
-            }
-        });
-
-        // Save to disk!
-        fs.writeFileSync(CACHE_FILE, JSON.stringify(allPlayers, null, 2), 'utf-8');
-        return allPlayers;
-    } catch (error: any) {
-        console.error('Error fetching API-Football cache:', error.message);
-        return [];
-    }
+    return {
+        id: p.id,
+        name: p.name,
+        position: positionMap[positionStr] || positionStr || 'Jugador',
+        nationality: p.nationality || '',
+        shirtNumber: gamesInfo.number || Math.floor(Math.random() * 99) + 1,
+        photoUrl: p.photo, // Native API-Football Photos!
+        dateOfBirth: p.birth?.date,
+        team: {
+            id: teamInfo.id,
+            name: teamInfo.name || 'Agente Libre',
+            crest: teamInfo.logo
+        },
+        rawStats: stats
+    };
 };
 
 export const getPlayersList = async (req: Request, res: Response, next: NextFunction) => {
     try {
-        let players = await loadPlayersCache();
-        const { search, position, sort, page } = req.query;
+        const pageStr = req.query.page as string;
+        const pageNum = pageStr ? parseInt(pageStr) : 1;
 
-        if (search) {
-            const searchStr = (search as string).toLowerCase();
-            players = players.filter((p: any) => p.name.toLowerCase().includes(searchStr));
+        const { search, position } = req.query;
+        const searchStr = search ? (search as string).toLowerCase() : '';
+
+        // Fetch live from the API instead of offline cache. 
+        // We pass the search term directly to API-Football!
+        const apiRes = await getPlayers(pageNum, searchStr);
+
+        let mappedPlayers: any[] = [];
+        if (apiRes.response) {
+            mappedPlayers = apiRes.response.map(mapPlayer);
         }
+
+        // Apply local filtering for position as the API doesn't always support granular position filtering natively
+        let finalPlayers = mappedPlayers;
 
         if (position) {
             const pos = (position as string).toLowerCase();
-            players = players.filter((p: any) => {
+            finalPlayers = finalPlayers.filter((p: any) => {
                 const plPos = p.position.toLowerCase();
                 if (pos === 'por') return plPos === 'portero';
                 if (pos === 'def') return plPos === 'defensa';
@@ -93,26 +65,15 @@ export const getPlayersList = async (req: Request, res: Response, next: NextFunc
             });
         }
 
-        if (sort === 'name') {
-            players.sort((a: any, b: any) => a.name.localeCompare(b.name));
-        }
-
-        const pageNum = page ? parseInt(page as string) : 1;
-        const limit = 20;
-        const total = players.length;
-        const startIndex = (pageNum - 1) * limit;
-        const endIndex = startIndex + limit;
-        const paginatedPlayers = players.slice(startIndex, endIndex);
-
         res.json({
             status: 'success',
             data: {
-                players: paginatedPlayers,
-                total: total,
-                page: pageNum,
-                totalPages: Math.ceil(total / limit)
+                players: finalPlayers,
+                total: apiRes.paging ? apiRes.paging.total * 20 : finalPlayers.length,
+                page: apiRes.paging ? apiRes.paging.current : pageNum,
+                totalPages: apiRes.paging ? apiRes.paging.total : 1
             },
-            message: 'Datos obtenidos correctamente'
+            message: 'Datos obtenidos correctamente de la API'
         });
     } catch (error: any) {
         next(error);
@@ -124,13 +85,12 @@ export const getPlayerDetails = async (req: Request, res: Response, next: NextFu
         const id = req.params.id as string;
         if (!id || !isValidId(id)) throw { status: 400, message: 'ID de jugador inválido' };
 
-        // Instead of wasting API quota, try finding it in our comprehensive offline cache
-        const allPlayers = await loadPlayersCache();
-        const p = allPlayers.find((player: any) => player.id.toString() === id.toString());
-
-        if (!p) {
-            throw { status: 404, message: 'Jugador no encontrado en el caché local' };
+        const apiRes = await getPlayer(id);
+        if (!apiRes.response || apiRes.response.length === 0) {
+            throw { status: 404, message: 'Jugador no encontrado' };
         }
+
+        const p = mapPlayer(apiRes.response[0]);
 
         res.json({
             status: 'success',
@@ -156,18 +116,16 @@ export const getPlayerStats = async (req: Request, res: Response, next: NextFunc
         const id = req.params.id as string;
         if (!id || !isValidId(id)) throw { status: 400, message: 'ID de jugador inválido' };
 
-        // Pull corresponding robust stats from the cached player
-        const allPlayers = await loadPlayersCache();
-        const p = allPlayers.find((player: any) => player.id.toString() === id.toString());
-
-        if (!p) {
-            throw { status: 404, message: 'Jugador no encontrado en el caché local' };
+        const apiRes = await getPlayer(id);
+        if (!apiRes.response || apiRes.response.length === 0) {
+            throw { status: 404, message: 'Jugador no encontrado' };
         }
 
+        const p = mapPlayer(apiRes.response[0]);
         const stats = p.rawStats || {};
 
         const data = {
-            matches: [stats], // API-Football nests it per league usually, we pass the single obj in an array to preserve frontend structure loosely
+            matches: [stats], // Keep nested structure inside array
             mockedStats: {
                 goals: stats.goals?.total || 0,
                 assists: stats.goals?.assists || 0,
