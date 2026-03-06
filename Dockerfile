@@ -10,7 +10,7 @@ COPY src ./src
 
 RUN npm run build
 
-EXPOSE 3001
+EXPOSE 5000
 
 ENV NODE_ENV=production
 

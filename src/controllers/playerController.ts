@@ -1,6 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
-import { getPlayers, getPlayer } from '../services/footballDataService';
-import { isValidId } from '../utils/validators';
+import { getPlayers, getPlayer } from '../services/footballDataService.js';
+import { isValidId } from '../utils/validators.js';
 
 const positionMap: Record<string, string> = {
     'Goalkeeper': 'Portero',
